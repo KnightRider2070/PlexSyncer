@@ -1,9 +1,6 @@
 name: Build Executables with PyInstaller
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main

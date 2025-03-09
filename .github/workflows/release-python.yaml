@@ -16,7 +16,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,7 +37,6 @@ jobs:
   # Windows Build Job
   windows-build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -56,7 +54,7 @@ jobs:
 
       - name: Build Executable using PyInstaller for Windows
         run: |
-          pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
+          pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-win --distpath dist --workpath build --specpath spec cli.py
 
       - name: Upload Windows Executable as Artifact
         uses: actions/upload-artifact@v4
@@ -73,7 +71,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -92,9 +89,9 @@ jobs:
       - name: Build Executable using PyInstaller for ${{ matrix.os }}
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
+            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-linux --distpath dist --workpath build --specpath spec cli.py
           elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
+            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-macos --distpath dist --workpath build --specpath spec cli.py
           fi
 
       - name: Upload ${{ matrix.os }} Executable as Artifact
@@ -107,31 +104,41 @@ jobs:
       tag: ${{ github.ref_name }}
       runner-os: ${{ matrix.os }}
 
-  # Release Job
+  # Publish Release Job
   publish-release:
     needs: [windows-build, linux-macos-build, release]
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Get the latest tag created by semantic-release
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          # Fetch tags if not already fetched
+          git fetch --tags
+          # Retrieve the most recent tag
+          latest_tag=$(git describe --tags --abbrev=0)
+          echo "Latest tag: $latest_tag"
+          echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
+
       - name: Download Windows Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.windows-build.outputs.tag }}-windows-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-windows-latest
           path: ./dist
 
       - name: Download Linux Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-ubuntu-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-ubuntu-latest
           path: ./dist
 
       - name: Download macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-macos-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-macos-latest
           path: ./dist
 
       - name: Unpack Artifacts
