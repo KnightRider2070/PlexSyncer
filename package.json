@@ -1,4 +1,9 @@
 {
+  "name": "plexsyncer",
+  "version": "0.1.0",
+  "description": "A tool to generate and upload Plex playlists.",
+  "author": "KnightRider2070",
+  "license": "Mozilla Public License 2.0 (MPL 2.0)",
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.0",
     "@semantic-release/commit-analyzer": "^9.0.0",
