@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/KnightRider2070/PlexSyncer/compare/v1.1.0...v1.1.1) (2025-03-09)
+
+
+### Bug Fixes
+
+* standardize executable names in release workflow for Windows, Linux, and macOS ([71b987c](https://github.com/KnightRider2070/PlexSyncer/commit/71b987cc6367cc28130deefb7c2e464af1ab9ced))
+* update Windows executable artifact path in package.json ([af77713](https://github.com/KnightRider2070/PlexSyncer/commit/af7771395c26e95dc5671e3a01a5d0fe968443ce))
+
 # [1.1.0](https://github.com/KnightRider2070/PlexSyncer/compare/v1.0.0...v1.1.0) (2025-03-09)
 
 
