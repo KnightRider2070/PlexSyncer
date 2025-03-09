@@ -11,14 +11,9 @@
     "@semantic-release/release-notes-generator": "^10.0.0",
     "semantic-release": "^24.2.3"
   },
-   "scripts": {
-    "clean-build": "...",
-    "build-artifact": "npm run clean-build && tar -zxvf $(npm pack) && rm *-0.0.0-development.tgz && tar -zcvf release.tar.gz package/* && rm -rf package",
-    "semantic-release": "npm run build-artifact && npm run clean-build && npx semantic-release"
-  },
   "release": {
     "npmPublish": false,
-     "branches": [
+    "branches": [
       "main",
       { "name": "beta", "prerelease": true },
       { "name": "alpha", "prerelease": true }
@@ -32,7 +27,6 @@
         "@semantic-release/github",
         {
           "assets": [
-            { "path": "release.tar.gz", "label": "Release Artifact" },
             { "path": "binaries/*", "label": "Executable Files" }
           ]
         }
