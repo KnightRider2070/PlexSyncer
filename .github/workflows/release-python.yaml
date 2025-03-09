@@ -143,13 +143,13 @@ jobs:
       - name: Download Linux Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-linux
+          name: plexsyncer-executable-Linux
           path: ./dist
 
       - name: Download macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-macos
+          name: plexsyncer-executable-macOS
           path: ./dist
 
       - name: Unpack Artifacts
