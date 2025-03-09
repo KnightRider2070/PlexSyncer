@@ -1,3 +1,20 @@
+# [1.1.0](https://github.com/KnightRider2070/PlexSyncer/compare/v1.0.0...v1.1.0) (2025-03-09)
+
+
+### Bug Fixes
+
+* Add newline at end of file in package.json ([bde0820](https://github.com/KnightRider2070/PlexSyncer/commit/bde0820a26e60e353d2f78cd36e0ce38c6a596b5))
+* standardize artifact names and update release script in workflows ([c773eb7](https://github.com/KnightRider2070/PlexSyncer/commit/c773eb79e4901efdc5d7583820bd80468e1f43f4))
+* standardize casing of executable artifact names in release workflow ([99d507c](https://github.com/KnightRider2070/PlexSyncer/commit/99d507c3000c7b031bce753a728c78d91030cc9f))
+* update Node.js setup action to version 4 in release workflow ([cff67f2](https://github.com/KnightRider2070/PlexSyncer/commit/cff67f29359921e70e2c50b3fdc9d19dff35c78f))
+* Update release-python.yaml ([27844bb](https://github.com/KnightRider2070/PlexSyncer/commit/27844bbaac4fda14b4e7d06a873a94b5bb7c481a))
+
+
+### Features
+
+* add multi-platform build jobs for Windows, Linux, and macOS executables with semantic-release integration ([a8a9f35](https://github.com/KnightRider2070/PlexSyncer/commit/a8a9f35a83e6e18690f8d88138e7da77337cd7de))
+* add Node.js setup and dependency installation to release workflow ([0b633b3](https://github.com/KnightRider2070/PlexSyncer/commit/0b633b3a25d9b5a48a545de92221d162fc3e4b94))
+
 # 1.0.0 (2025-03-09)
 
 
