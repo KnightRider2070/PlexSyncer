@@ -60,6 +60,7 @@ jobs:
 
     outputs:
       python-version: ${{ matrix.python-version }}
+      runner-os: ${{ runner.os }}
 
     steps:
       - name: Checkout code
@@ -107,7 +108,7 @@ jobs:
       - name: Download Linux/macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.python-version }}-${{ matrix.os }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.python-version }}-${{ needs.linux-macos-build.outputs.runner-os }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
