@@ -47,11 +47,11 @@ jobs:
       # Run PyInstaller to create executables
       - name: Build Executable using PyInstaller
         run: |
-          if [[ $RUNNER_OS == 'Windows' ]]; then
+          if [ "$RUNNER_OS" == "Windows" ]; then
             pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
-          elif [[ $RUNNER_OS == 'Linux' ]]; then
+          elif [ "$RUNNER_OS" == "Linux" ]; then
             pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
-          elif [[ $RUNNER_OS == 'macOS' ]]; then
+          elif [ "$RUNNER_OS" == "macOS" ]; then
             pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
           fi
 
