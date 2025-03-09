@@ -2,8 +2,6 @@ name: Build Executable with PyInstaller
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
