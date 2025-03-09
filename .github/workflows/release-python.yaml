@@ -32,13 +32,25 @@ jobs:
         run: npm install
 
       - name: Run semantic-release
+        id: semantic_release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release --debug
 
+      - name: Get Latest Tag
+        id: get_tag
+        run: |
+          # Fetch tags if not already fetched
+          git fetch --tags
+          # Retrieve the most recent tag
+          latest_tag=$(git describe --tags --abbrev=0)
+          echo "Latest tag: $latest_tag"
+          echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
+
   # Windows Build Job
   windows-build:
+    needs: release
     runs-on: windows-latest
     steps:
       - name: Checkout code
@@ -89,11 +101,9 @@ jobs:
           name: plexsyncer-executable-${{ github.run_id }}-${{ env.PYTHON_VERSION }}-windows
           path: dist/plexsyncer*
 
-    outputs:
-      tag: ${{ github.ref_name }}
-
   # Linux and macOS Build Job
   linux-macos-build:
+    needs: release
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -140,49 +150,30 @@ jobs:
           name: plexsyncer-executable-${{ github.run_id }}-${{ matrix.python-version }}-${{ runner.os }}
           path: dist/plexsyncer*
 
-    outputs:
-      tag: ${{ github.ref_name }}
-      runner-os: ${{ matrix.os }}
-
   # Publish Release Job
   publish-release:
-    needs: [windows-build, linux-macos-build, release]
+    needs: [windows-build, linux-macos-build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Get the latest tag created by semantic-release
-      - name: Get Latest Tag
-        id: get_tag
-        run: |
-          # Fetch tags if not already fetched
-          git fetch --tags
-          # Retrieve the most recent tag
-          latest_tag=$(git describe --tags --abbrev=0 --match "v*")
-          if [ -z "$latest_tag" ]; then
-            echo "No tags found"
-            exit 1
-          fi
-          echo "Latest tag: $latest_tag"
-          echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
-
       - name: Download Windows Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-windows-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.release.outputs.LATEST_TAG }}-windows-latest
           path: ./dist
 
       - name: Download Linux Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-ubuntu-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.release.outputs.LATEST_TAG }}-ubuntu-latest
           path: ./dist
 
       - name: Download macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ steps.get_tag.outputs.LATEST_TAG }}-macos-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.release.outputs.LATEST_TAG }}-macos-latest
           path: ./dist
 
       - name: Unpack Artifacts
