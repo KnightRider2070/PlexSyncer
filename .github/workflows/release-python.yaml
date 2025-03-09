@@ -30,7 +30,7 @@ jobs:
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx semantic-release --extends .releaserc
+        run: npx semantic-release --debug
 
   # Windows Build Job
   windows-build:
