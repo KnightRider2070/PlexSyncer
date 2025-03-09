@@ -1,13 +1,12 @@
 {
   "branches": [
-    "+([0-9])?(.{+([0-9]),x}).x",
-    "master",
     "main",
+    "master",
     "next",
     "next-major",
-    { "name": "v+([0-9])?(.{+([0-9]),x}).x", "prerelease": true },
     { "name": "beta", "prerelease": true },
-    { "name": "alpha", "prerelease": true }
+    { "name": "alpha", "prerelease": true },
+    { "name": "*v+([0-9])?(.{+([0-9]),x}).x", "prerelease": false }
   ],
   "plugins": [
     "@semantic-release/commit-analyzer",
