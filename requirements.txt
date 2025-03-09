@@ -1,4 +1,4 @@
 plexapi==4.16.1
-requests==2.32.3
+requests==2.32.2
 mutagen==1.47.0
 spotipy==2.25.1
