@@ -61,7 +61,7 @@ jobs:
 
       - name: Build Executable using PyInstaller for Windows
         run: |
-          pyinstaller --onefile --console --name plexsyncer-${{ env.PYTHON_VERSION }}-win --distpath dist --workpath build --specpath spec cli.py
+          pyinstaller --onefile --console --name plexsyncer-windows --distpath dist --workpath build --specpath spec cli.py
 
       - name: Upload Windows Executable as Artifact
         uses: actions/upload-artifact@v4
@@ -115,9 +115,9 @@ jobs:
       - name: Build Executable using PyInstaller for ${{ runner.os }}
         run: |
           if [ "${{ runner.os }}" == "Linux" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ env.PYTHON_VERSION }}-linux --distpath dist --workpath build --specpath spec cli.py
+            pyinstaller --onefile --console --name plexsyncer-linux --distpath dist --workpath build --specpath spec cli.py
           elif [ "${{ runner.os }}" == "macOS" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ env.PYTHON_VERSION }}-macos --distpath dist --workpath build --specpath spec cli.py
+            pyinstaller --onefile --console --name plexsyncer-macos --distpath dist --workpath build --specpath spec cli.py
           fi
 
       - name: Upload ${{ runner.os }} Executable as Artifact
