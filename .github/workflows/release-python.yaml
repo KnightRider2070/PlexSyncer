@@ -31,18 +31,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r dev-requirements.txt
           pip install pyinstaller
 
       # Run PyInstaller to create executables
       - name: Build Executable using PyInstaller
         run: |
-          if [ $RUNNER_OS == 'Windows' ]; then
-            pyinstaller --onefile --noconsole --name plexsyncer --distpath dist --workpath build --specpath spec plexsynclicer.py  # Windows build
-          elif [ $RUNNER_OS == 'Linux' ]; then
-            pyinstaller --onefile --name plexsyncer --distpath dist --workpath build --specpath spec cli.py  # Linux build
-          elif [ $RUNNER_OS == 'macOS' ]; then
-            pyinstaller --onefile --name plexsyncer --distpath dist --workpath build --specpath spec cli.py  # macOS build
+          if [[ $RUNNER_OS == 'Windows' ]]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
+          elif [[ $RUNNER_OS == 'Linux' ]]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
+          elif [[ $RUNNER_OS == 'macOS' ]]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
           fi
 
       # Upload the Executable as Artifact for download
