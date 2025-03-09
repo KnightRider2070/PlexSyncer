@@ -11,6 +11,10 @@
     "@semantic-release/release-notes-generator": "^10.0.0",
     "semantic-release": "^24.2.3"
   },
+  "scripts": {
+    "clean-build": "rm -rf dist && mkdir dist",
+    "release": "npx semantic-release"
+  },
   "release": {
     "npmPublish": false,
     "branches": [
@@ -27,7 +31,9 @@
         "@semantic-release/github",
         {
           "assets": [
-            { "path": "binaries/*", "label": "Executable Files" }
+            { "path": "binaries/plexsyncer-win*", "label": "Windows Executable" },
+            { "path": "binaries/plexsyncer-linux*", "label": "Linux Executable" },
+            { "path": "binaries/plexsyncer-macos*", "label": "macOS Executable" }
           ]
         }
       ]
