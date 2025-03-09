@@ -4,11 +4,34 @@ on:
   push:
     tags:
       - "v*" # Trigger on version tags
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "16"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
   # Windows Build Job
   windows-build:
     runs-on: windows-latest
@@ -82,8 +105,8 @@ jobs:
       runner-os: ${{ matrix.os }}
 
   # Release Job
-  release:
-    needs: [windows-build, linux-macos-build] # Depends on the build jobs
+  publish-release:
+    needs: [windows-build, linux-macos-build, release]
     runs-on: ubuntu-latest
 
     steps:
@@ -117,5 +140,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: binaries/*
+          body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
