@@ -91,7 +91,7 @@ jobs:
           name: plexsyncer-executable-${{ github.run_id }}-${{ matrix.python-version }}-${{ runner.os }}
           path: dist/plexsyncer*
 
-  # Release Job
+          # Release Job
   release:
     needs: [windows-build, linux-macos-build] # Depends on the build jobs
     runs-on: ubuntu-latest
@@ -104,15 +104,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: plexsyncer-executable-windows-${{ github.run_id }}-${{ needs.windows-build.outputs.python-version }}
+          path: ./dist
 
       - name: Download Linux/macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
           name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.python-version }}-${{ needs.linux-macos-build.outputs.runner-os }}
+          path: ./dist
+
+      - name: Unpack Artifacts
+        run: |
+          mkdir -p binaries
+          mv ./dist/plexsyncer* binaries/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/plexsyncer*
+          files: binaries/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
