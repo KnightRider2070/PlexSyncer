@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/KnightRider2070/PlexSyncer/compare/v1.1.1...v1.1.2) (2025-03-09)
+
+
+### Bug Fixes
+
+* update Windows executable path to include .exe extension in package.json ([1020289](https://github.com/KnightRider2070/PlexSyncer/commit/1020289e5113d44c5ea538058282ff0977307c69))
+
 ## [1.1.1](https://github.com/KnightRider2070/PlexSyncer/compare/v1.1.0...v1.1.1) (2025-03-09)
 
 
