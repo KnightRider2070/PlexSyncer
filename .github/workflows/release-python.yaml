@@ -6,6 +6,9 @@ on:
       - main
     tags:
       - "v*" # Trigger on version tags
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write # to be able to publish a GitHub release
@@ -46,20 +49,44 @@ jobs:
         with:
           python-version: 3.x
 
+      - name: Retrieve Python Version on Windows
+        id: get_python_version
+        run: |
+          $python_version = & python --version
+          Write-Host "Python Version: $python_version"
+          $env:PYTHON_VERSION = $python_version.Split(' ')[1]
+          Write-Host "Setting PYTHON_VERSION=$($env:PYTHON_VERSION)"
+          echo "PYTHON_VERSION=$($env:PYTHON_VERSION)" >> $env:GITHUB_ENV
+
+      - name: Get pip cache directory
+        id: get_pip_cache_dir
+        run: |
+          $pip_cache_dir = & python -m pip cache dir
+          echo "Pip cache directory is: $pip_cache_dir"
+          echo "PIP_CACHE_DIR=$pip_cache_dir" >> $env:GITHUB_ENV
+
+      - name: Cache Python dependencies (Windows)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/dev-requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r dev-requirements.txt
+          pip install --cache-dir ${{ env.PIP_CACHE_DIR }} -r dev-requirements.txt
           pip install pyinstaller
 
       - name: Build Executable using PyInstaller for Windows
         run: |
-          pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-win --distpath dist --workpath build --specpath spec cli.py
+          pyinstaller --onefile --console --name plexsyncer-${{ env.PYTHON_VERSION }}-win --distpath dist --workpath build --specpath spec cli.py
 
       - name: Upload Windows Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-windows-latest
+          name: plexsyncer-executable-${{ github.run_id }}-${{ env.PYTHON_VERSION }}-windows
           path: dist/plexsyncer*
 
     outputs:
@@ -70,7 +97,12 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python-version: [3.x]
     runs-on: ${{ matrix.os }}
+
+    env:
+      PIP_CACHE_DIR: ~/.cache/pip
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,26 +110,34 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache Python dependencies (Linux/macOS)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/dev-requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r dev-requirements.txt
+          pip install --cache-dir ${{ env.PIP_CACHE_DIR }} -r dev-requirements.txt
           pip install pyinstaller
 
-      - name: Build Executable using PyInstaller for ${{ matrix.os }}
+      - name: Build Executable using PyInstaller for ${{ runner.os }}
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-linux --distpath dist --workpath build --specpath spec cli.py
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-macos --distpath dist --workpath build --specpath spec cli.py
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-linux --distpath dist --workpath build --specpath spec cli.py
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-macos --distpath dist --workpath build --specpath spec cli.py
           fi
 
-      - name: Upload ${{ matrix.os }} Executable as Artifact
+      - name: Upload ${{ runner.os }} Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-${{ matrix.os }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ matrix.python-version }}-${{ runner.os }}
           path: dist/plexsyncer*
 
     outputs:
@@ -119,7 +159,11 @@ jobs:
           # Fetch tags if not already fetched
           git fetch --tags
           # Retrieve the most recent tag
-          latest_tag=$(git describe --tags --abbrev=0)
+          latest_tag=$(git describe --tags --abbrev=0 --match "v*")
+          if [ -z "$latest_tag" ]; then
+            echo "No tags found"
+            exit 1
+          fi
           echo "Latest tag: $latest_tag"
           echo "LATEST_TAG=$latest_tag" >> $GITHUB_OUTPUT
 
