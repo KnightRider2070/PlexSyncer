@@ -22,15 +22,6 @@ jobs:
         with:
           python-version: 3.x
 
-      - name: Retrieve Python Version on Windows
-        id: get_python_version
-        run: |
-          $python_version = & python --version
-          Write-Host "Python Version: $python_version"
-          $env:PYTHON_VERSION = $python_version.Split(' ')[1]
-          Write-Host "Setting PYTHON_VERSION=$($env:PYTHON_VERSION)"
-          echo "PYTHON_VERSION=$($env:PYTHON_VERSION)" >> $env:GITHUB_ENV
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -39,28 +30,23 @@ jobs:
 
       - name: Build Executable using PyInstaller for Windows
         run: |
-          pyinstaller --onefile --console --name plexsyncer-${{ env.PYTHON_VERSION }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
+          pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
 
       - name: Upload Windows Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-windows-${{ github.run_id }}-${{ env.PYTHON_VERSION }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-windows-latest
           path: dist/plexsyncer*
 
     outputs:
-      python-version: ${{ env.PYTHON_VERSION }}
+      tag: ${{ github.ref_name }}
 
   # Linux and macOS Build Job
   linux-macos-build:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python-version: [3.x]
     runs-on: ${{ matrix.os }}
-
-    outputs:
-      python-version: ${{ matrix.python-version }}
-      runner-os: ${{ runner.os }}
 
     steps:
       - name: Checkout code
@@ -69,7 +55,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: 3.x
 
       - name: Install dependencies
         run: |
@@ -77,21 +63,25 @@ jobs:
           pip install -r dev-requirements.txt
           pip install pyinstaller
 
-      - name: Build Executable using PyInstaller for ${{ runner.os }}
+      - name: Build Executable using PyInstaller for ${{ matrix.os }}
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
-          elif [ "${{ runner.os }}" == "macOS" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ matrix.python-version }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
           fi
 
-      - name: Upload ${{ runner.os }} Executable as Artifact
+      - name: Upload ${{ matrix.os }} Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ matrix.python-version }}-${{ runner.os }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-${{ matrix.os }}
           path: dist/plexsyncer*
 
-          # Release Job
+    outputs:
+      tag: ${{ github.ref_name }}
+      runner-os: ${{ matrix.os }}
+
+  # Release Job
   release:
     needs: [windows-build, linux-macos-build] # Depends on the build jobs
     runs-on: ubuntu-latest
@@ -103,13 +93,19 @@ jobs:
       - name: Download Windows Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-windows-${{ github.run_id }}-${{ needs.windows-build.outputs.python-version }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.windows-build.outputs.tag }}-windows-latest
           path: ./dist
 
-      - name: Download Linux/macOS Executable Artifact
+      - name: Download Linux Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.python-version }}-${{ needs.linux-macos-build.outputs.runner-os }}
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-ubuntu-latest
+          path: ./dist
+
+      - name: Download macOS Executable Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-macos-latest
           path: ./dist
 
       - name: Unpack Artifacts
