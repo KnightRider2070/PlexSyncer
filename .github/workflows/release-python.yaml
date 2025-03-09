@@ -157,10 +157,6 @@ jobs:
           mkdir -p binaries
           mv ./dist/plexsyncer* binaries/
 
-      - name: Build Release Artifact
-        run: |
-          tar -zcvf release.tar.gz binaries/*
-
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
