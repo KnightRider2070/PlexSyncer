@@ -39,7 +39,7 @@ jobs:
       - name: Build Executable using PyInstaller
         run: |
           if [ $RUNNER_OS == 'Windows' ]; then
-            pyinstaller --onefile --noconsole --name plexsyncer --distpath dist --workpath build --specpath spec plexsynclicer.py  # Windows build
+            pyinstaller --onefile --console --name plexsyncer --distpath dist --workpath build --specpath spec cli.py  # Windows build
           elif [ $RUNNER_OS == 'Linux' ]; then
             pyinstaller --onefile --name plexsyncer --distpath dist --workpath build --specpath spec cli.py  # Linux build
           elif [ $RUNNER_OS == 'macOS' ]; then

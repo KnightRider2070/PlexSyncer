@@ -24,10 +24,17 @@ from plexsyncer.api import (
 from plexsyncer.playlist import process_library
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.INFO)  # Default log level is INFO
+
+# Console output (StreamHandler)
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logger.addHandler(ch)
+
+# Optional: File output (FileHandler)
+file_handler = logging.FileHandler("plexsyncer.log")
+file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+logger.addHandler(file_handler)
 
 
 def command_generate(args):
@@ -212,6 +219,9 @@ def main():
         "--verify-m3u8",
         action="store_true",
         help="Also verify local m3u8 content against Plex",
+    )
+    ver_parser.add_argument(
+        "--verbose", action="store_true", help="Enable verbose logging (DEBUG level)"
     )
     ver_parser.set_defaults(func=command_verify)
 
