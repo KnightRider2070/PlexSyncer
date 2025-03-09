@@ -31,7 +31,7 @@
         "@semantic-release/github",
         {
           "assets": [
-            { "path": "binaries/plexsyncer-win*", "label": "Windows Executable" },
+            { "path": "binaries/plexsyncer-windows", "label": "Windows Executable" },
             { "path": "binaries/plexsyncer-linux*", "label": "Linux Executable" },
             { "path": "binaries/plexsyncer-macos*", "label": "macOS Executable" }
           ]
