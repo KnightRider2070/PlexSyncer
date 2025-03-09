@@ -50,5 +50,5 @@ jobs:
       - name: Upload Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable
+          name: plexsyncer-executable-${{ github.run_id }}-${{ matrix.python-version }}
           path: dist/plexsyncer*
