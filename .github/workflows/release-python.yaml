@@ -32,6 +32,7 @@ jobs:
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npx semantic-release --debug
 
   # Windows Build Job
@@ -62,9 +63,6 @@ jobs:
         with:
           name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-windows-latest
           path: dist/plexsyncer*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     outputs:
       tag: ${{ github.ref_name }}
