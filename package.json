@@ -1,6 +1,5 @@
 {
   "name": "plexsyncer",
-  "version": "0.1.0",
   "description": "A tool to generate and upload Plex playlists.",
   "author": "KnightRider2070",
   "license": "Mozilla Public License 2.0 (MPL 2.0)",
@@ -12,18 +11,32 @@
     "@semantic-release/release-notes-generator": "^10.0.0",
     "semantic-release": "^24.2.3"
   },
+  "scripts": {
+    "clean-build": "rm -rf dist && mkdir dist",
+    "release": "npx semantic-release"
+  },
   "release": {
+    "npmPublish": false,
     "branches": [
       "main",
       { "name": "beta", "prerelease": true },
       { "name": "alpha", "prerelease": true }
-    ]
-  },
+    ],
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
       "@semantic-release/changelog",
-      "@semantic-release/github",
-      "@semantic-release/git"
+      "@semantic-release/git",
+      [
+        "@semantic-release/github",
+        {
+          "assets": [
+            { "path": "binaries/plexsyncer-windows.exe", "label": "Windows Executable" },
+            { "path": "binaries/plexsyncer-linux*", "label": "Linux Executable" },
+            { "path": "binaries/plexsyncer-macos*", "label": "macOS Executable" }
+          ]
+        }
+      ]
     ]
+  }
 }

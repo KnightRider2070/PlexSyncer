@@ -6,6 +6,9 @@ on:
       - main
     tags:
       - "v*" # Trigger on version tags
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write # to be able to publish a GitHub release
@@ -14,31 +17,9 @@ permissions:
   id-token: write # to enable use of OIDC for npm provenance
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: "23"
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npx semantic-release --debug
-
   # Windows Build Job
   windows-build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,31 +29,56 @@ jobs:
         with:
           python-version: 3.x
 
+      - name: Retrieve Python Version on Windows
+        id: get_python_version
+        run: |
+          $python_version = & python --version
+          Write-Host "Python Version: $python_version"
+          $env:PYTHON_VERSION = $python_version.Split(' ')[1]
+          Write-Host "Setting PYTHON_VERSION=$($env:PYTHON_VERSION)"
+          echo "PYTHON_VERSION=$($env:PYTHON_VERSION)" >> $env:GITHUB_ENV
+
+      - name: Get pip cache directory
+        id: get_pip_cache_dir
+        run: |
+          $pip_cache_dir = & python -m pip cache dir
+          echo "Pip cache directory is: $pip_cache_dir"
+          echo "PIP_CACHE_DIR=$pip_cache_dir" >> $env:GITHUB_ENV
+
+      - name: Cache Python dependencies (Windows)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/dev-requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r dev-requirements.txt
+          pip install --cache-dir ${{ env.PIP_CACHE_DIR }} -r dev-requirements.txt
           pip install pyinstaller
 
       - name: Build Executable using PyInstaller for Windows
         run: |
-          pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-win --distpath dist --workpath build --specpath spec cli.py  # Windows build
+          pyinstaller --onefile --console --name plexsyncer-windows --distpath dist --workpath build --specpath spec cli.py
 
       - name: Upload Windows Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-windows-latest
+          name: plexsyncer-executable-windows
           path: dist/plexsyncer*
-
-    outputs:
-      tag: ${{ github.ref_name }}
 
   # Linux and macOS Build Job
   linux-macos-build:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python-version: [3.x]
     runs-on: ${{ matrix.os }}
+
+    env:
+      PIP_CACHE_DIR: ~/.cache/pip
 
     steps:
       - name: Checkout code
@@ -81,57 +87,77 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: ${{ matrix.python-version }}
+
+      - name: Retrieve Python Version on Linux/macOS
+        id: get_python_version
+        run: |
+          python_version=$(python --version)
+          echo "Python Version: $python_version"
+          PYTHON_VERSION=$(echo $python_version | cut -d' ' -f2)
+          echo "Setting PYTHON_VERSION=$PYTHON_VERSION"
+          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+
+      - name: Cache Python dependencies (Linux/macOS)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/dev-requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r dev-requirements.txt
+          pip install --cache-dir ${{ env.PIP_CACHE_DIR }} -r dev-requirements.txt
           pip install pyinstaller
 
-      - name: Build Executable using PyInstaller for ${{ matrix.os }}
+      - name: Build Executable using PyInstaller for ${{ runner.os }}
         run: |
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-linux --distpath dist --workpath build --specpath spec cli.py  # Linux build
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            pyinstaller --onefile --console --name plexsyncer-${{ github.ref_name }}-macos --distpath dist --workpath build --specpath spec cli.py  # macOS build
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            pyinstaller --onefile --console --name plexsyncer-linux --distpath dist --workpath build --specpath spec cli.py
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            pyinstaller --onefile --console --name plexsyncer-macos --distpath dist --workpath build --specpath spec cli.py
           fi
 
-      - name: Upload ${{ matrix.os }} Executable as Artifact
+      - name: Upload ${{ runner.os }} Executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ github.ref_name }}-${{ matrix.os }}
+          name: plexsyncer-executable-${{ runner.os }}
           path: dist/plexsyncer*
 
-    outputs:
-      tag: ${{ github.ref_name }}
-      runner-os: ${{ matrix.os }}
-
   # Release Job
-  publish-release:
-    needs: [windows-build, linux-macos-build, release]
+  release:
+    needs: [windows-build, linux-macos-build]
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "23"
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Download Windows Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.windows-build.outputs.tag }}-windows-latest
+          name: plexsyncer-executable-windows
           path: ./dist
 
       - name: Download Linux Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-ubuntu-latest
+          name: plexsyncer-executable-Linux
           path: ./dist
 
       - name: Download macOS Executable Artifact
         uses: actions/download-artifact@v4
         with:
-          name: plexsyncer-executable-${{ github.run_id }}-${{ needs.linux-macos-build.outputs.tag }}-macos-latest
+          name: plexsyncer-executable-macOS
           path: ./dist
 
       - name: Unpack Artifacts
@@ -139,10 +165,8 @@ jobs:
           mkdir -p binaries
           mv ./dist/plexsyncer* binaries/
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: binaries/*
-          body_path: CHANGELOG.md
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npx semantic-release

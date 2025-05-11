@@ -203,11 +203,3 @@ uploading, if the file ends in `.m3u8`, it is renamed to `.m3u`.
 
 PlexSyncer creates a master m3u8 file (`master.m3u8`), listing all remapped playlist paths, offering a single entry
 point to access all individual playlists.
-
-## Conclusion
-
-**PlexSyncer** simplifies the management of Plex playlists by automating the generation, remapping, uploading, and
-verification of m3u8 files. By relying on two primary path-mapping parameters and integrating with the Plex API to
-automatically resolve library section IDs, the tool streamlines workflows for media servers and IPTV setups.
-
-For additional information, troubleshooting, or contributions, please refer to the project repository or open an issue.
