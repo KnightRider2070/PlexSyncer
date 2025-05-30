@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/KnightRider2070/PlexSyncer/compare/v1.1.2...v1.2.0) (2025-05-30)
+
+
+### Features
+
+* add Tidal integration module with OAuth support and playlist management ([51d4194](https://github.com/KnightRider2070/PlexSyncer/commit/51d41942794cf2d76101c31b3bcc5ec641951f45))
+
 ## [1.1.2](https://github.com/KnightRider2070/PlexSyncer/compare/v1.1.1...v1.1.2) (2025-03-09)
 
 
