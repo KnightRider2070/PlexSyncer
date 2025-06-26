@@ -70,17 +70,12 @@ def extract_playlist_id(url: str) -> str:
 
 
 def sanitize_filename(name: str) -> str:
-    # Allow letters, digits, underscore, hyphen, and spaces; replace others with space
     cleaned = re.sub(r"[^\w\- ]", " ", name)
-    # Collapse multiple spaces into one
     cleaned = re.sub(r" +", " ", cleaned)
     return cleaned.strip()
 
 
 def _retry_spotify_call(callable_func, *args, **kwargs):
-    """
-    Retry a spotipy call with exponential backoff, jitter, and rate-limit handling.
-    """
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
             return callable_func(*args, **kwargs)
@@ -112,7 +107,6 @@ def _retry_spotify_call(callable_func, *args, **kwargs):
                 time.sleep(wait)
                 continue
             raise
-    # Final attempt
     return callable_func(*args, **kwargs)
 
 
@@ -121,7 +115,7 @@ def _retry_spotify_call(callable_func, *args, **kwargs):
 
 class SpotifyIntegration:
     """
-    A helper class for interacting with Spotify and exporting playlist data.
+    A helper class for interacting with Spotify and exporting/importing playlist data.
     """
 
     def __init__(
@@ -231,7 +225,7 @@ class SpotifyIntegration:
         meta = _retry_spotify_call(sp.playlist, pid)
         name = meta.get("name", "Unnamed")
         tracks = self.fetch_tracks(pid, encode_spaces)
-        data = {"playlist": {"name": name, "tracks": tracks}}
+        data = {"playlists": [{"id": pid, "name": name, "tracks": tracks}]}
         self._save(data, output_path)
         logger.info("Exported playlist '%s' to %s.", name, output_path)
 
@@ -290,9 +284,9 @@ class SpotifyIntegration:
             logger.error("Cannot read %s: %s", local_file, e)
             return
 
-        saved_playlists = self.fetch_user_playlists_with_tracks()
+        saved = self.fetch_user_playlists_with_tracks()
         loved = self.fetch_loved_tracks()
-        combined = {**saved_playlists, **loved}
+        combined = {**saved, **loved}
         self._save(combined, output_file)
 
     def fetch_user_playlists_with_tracks(
@@ -359,3 +353,184 @@ class SpotifyIntegration:
             logger.info("Saved data to %s", safe_path)
         except Exception as e:
             logger.error("Failed writing JSON to %s: %s", path, e)
+
+    def _search_spotify_track(self, title: str, artist: str) -> Optional[str]:
+        sp = self._get_client()
+        query = f"track:{title} artist:{artist}"
+        results = _retry_spotify_call(sp.search, q=query, type="track", limit=1)
+        items = results.get("tracks", {}).get("items", [])
+        if items:
+            return items[0]["uri"]
+        return None
+
+    # ----- New methods to mirror TidalIntegration functionality -----
+
+    def find_playlist_by_name(self, name: str, public: bool = False) -> Optional[str]:
+        """
+        Search the current user's playlists for one exactly matching the given name.
+        Return its playlist ID if found, else None.
+        """
+        sp = self._get_client()
+        offset = 0
+        page_limit = 50
+        sanitized = sanitize_filename(name)
+        while True:
+            resp = _retry_spotify_call(
+                sp.current_user_playlists, limit=page_limit, offset=offset
+            )
+            items = resp.get("items", [])
+            if not items:
+                break
+            for pl in items:
+                pl_name = pl.get("name", "")
+                if sanitize_filename(pl_name) == sanitized:
+                    return pl.get("id")
+            if not resp.get("next"):
+                break
+            offset += page_limit
+        return None
+
+    def create_spotify_playlist(
+        self, name: str, public: bool = False, description: str = ""
+    ) -> Optional[str]:
+        """
+        Create a new Spotify playlist for the current user.
+        Returns the new playlist ID.
+        """
+        sp = self._get_client()
+        me = _retry_spotify_call(sp.current_user)
+        user_id = me.get("id")
+        if not user_id:
+            logger.error("Unable to fetch current user ID for playlist creation")
+            return None
+        resp = _retry_spotify_call(
+            sp.user_playlist_create,
+            user_id,
+            name,
+            public=public,
+            description=description,
+        )
+        pid = resp.get("id")
+        logger.info(f"Created Spotify playlist '{name}' with id: {pid}")
+        return pid
+
+    def get_playlist_track_ids(self, playlist_id: str, page_limit: int = 100) -> set:
+        """
+        Retrieve all track URIs in a Spotify playlist to avoid duplicates.
+        """
+        sp = self._get_client()
+        existing = set()
+        offset = 0
+        while True:
+            resp = _retry_spotify_call(
+                sp.playlist_items,
+                playlist_id,
+                limit=page_limit,
+                offset=offset,
+                fields="items.track.uri,next",
+            )
+            for item in resp.get("items", []):
+                uri = item.get("track", {}).get("uri")
+                if uri:
+                    existing.add(uri)
+            if not resp.get("next"):
+                break
+            offset += page_limit
+        return existing
+
+    def _add_tracks_to_playlist(self, playlist_id: str, track_uris: List[str]) -> None:
+        """
+        Add a list of Spotify track URIs to a playlist in batches of up to 100.
+        """
+        sp = self._get_client()
+        batch_size = 100
+        for i in range(0, len(track_uris), batch_size):
+            batch = track_uris[i : i + batch_size]
+            _retry_spotify_call(sp.playlist_add_items, playlist_id, batch)
+            logger.info(
+                f"Added {len(batch)} tracks ({i}-{i+len(batch)-1}) to playlist {playlist_id}"
+            )
+            time.sleep(0.2)
+
+    def augment_tidal_with_spotify_ids(
+        self, tidal_json_path: str, output_path: str
+    ) -> None:
+        """
+        For each track in the Tidal JSON, add a Spotify URI if missing.
+        Saves progress to a .part file and renames on completion.
+        """
+        part_path = output_path + ".part"
+        if Path(part_path).exists():
+            data = json.loads(Path(part_path).read_text(encoding="utf-8"))
+        else:
+            data = json.loads(Path(tidal_json_path).read_text(encoding="utf-8"))
+
+        tidal_to_spotify: Dict[str, str] = {}
+        for pl in data.get("playlists", []):
+            pl["name"] = sanitize_filename(pl.get("name", ""))
+            for t in pl.get("tracks", []):
+                tidal_id = t.get("trackUri_tidal")
+                spotify_uri = t.get("trackUri_spotify")
+                if tidal_id and spotify_uri:
+                    tidal_to_spotify[tidal_id] = spotify_uri
+
+        for pl in data.get("playlists", []):
+            for t in pl.get("tracks", []):
+                tidal_id = t.get("trackUri_tidal")
+                if not tidal_id or t.get("trackUri_spotify"):
+                    continue
+                if tidal_id in tidal_to_spotify:
+                    t["trackUri_spotify"] = tidal_to_spotify[tidal_id]
+                else:
+                    title = t.get("trackName", "")
+                    artist = t.get("artistName", "")
+                    try:
+                        uri = self._search_spotify_track(title, artist)
+                        t["trackUri_spotify"] = uri
+                        tidal_to_spotify[tidal_id] = uri
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed Spotify search for '{title}' by '{artist}': {e}"
+                        )
+                        t["trackUri_spotify"] = None
+                Path(part_path).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        Path(part_path).rename(output_path)
+        logger.info(f"Augmented Spotify IDs written to {output_path}")
+
+    def add_playlists_and_tracks_from_json(self, input_json_path: str) -> None:
+        """
+        For each playlist in the JSON:
+          1) Find or create Spotify playlist.
+          2) Fetch existing URIs, filter duplicates.
+          3) Add only new URIs, annotate JSON, and persist file.
+        """
+        data = json.loads(Path(input_json_path).read_text(encoding="utf-8"))
+        me = _retry_spotify_call(self._get_client().current_user)
+        user_id = me.get("id")
+
+        for pl in data.get("playlists", []):
+            name = sanitize_filename(pl.get("name", ""))
+            spotify_pid = pl.get("spotify_playlist_id")
+            if not spotify_pid:
+                spotify_pid = self.find_playlist_by_name(name)
+                if not spotify_pid:
+                    spotify_pid = self.create_spotify_playlist(name=name)
+                pl["spotify_playlist_id"] = spotify_pid
+
+            desired_uris = [
+                t.get("trackUri_spotify")
+                for t in pl.get("tracks", [])
+                if t.get("trackUri_spotify")
+            ]
+            existing = self.get_playlist_track_ids(spotify_pid)
+            new_uris = [uri for uri in desired_uris if uri not in existing]
+            if not new_uris:
+                logger.info(f"No new tracks to add for '{name}', skipping.")
+                continue
+            try:
+                self._add_tracks_to_playlist(spotify_pid, new_uris)
+            except Exception as e:
+                logger.error(f"Error adding new tracks to '{name}': {e}")
+
+        Path(input_json_path).write_text(json.dumps(data, indent=2), encoding="utf-8")

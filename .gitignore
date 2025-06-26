@@ -176,3 +176,7 @@ qodana.yaml
 # Node
 node_modules
 package-lock.json
+integrations/spotify.py
+user_spotify_data.json
+tidal_oauth_tokens.json
+augmented.json

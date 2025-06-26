@@ -14,6 +14,8 @@ import argparse
 import logging
 import os
 
+from integrations.spotify import SpotifyIntegration
+from integrations.tidal import TidalIntegration
 from plexsyncer.api import (
     generate_master_playlist,
     get_section_id_from_library,
@@ -132,6 +134,84 @@ def command_verify(args):
         )
 
 
+def command_spotify_export(args):
+    si = SpotifyIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        use_oauth=args.use_oauth,
+        redirect_uri=args.redirect_uri,
+        scope=args.scope,
+    )
+    # fetch all playlists+tracks
+    data = si.fetch_user_playlists_with_tracks()
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"Spotify playlists exported to {args.output}")
+
+
+def command_spotify_augment(args):
+    si = SpotifyIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        use_oauth=args.use_oauth,
+        redirect_uri=args.redirect_uri,
+        scope=args.scope,
+    )
+    si.augment_tidal_with_spotify_ids(
+        tidal_json_path=args.input_json, output_path=args.output_json
+    )
+    logger.info(f"Augmented JSON with Spotify URIs → {args.output_json}")
+
+
+def command_spotify_push(args):
+    si = SpotifyIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        use_oauth=args.use_oauth,
+        redirect_uri=args.redirect_uri,
+        scope=args.scope,
+    )
+    si.add_playlists_and_tracks_from_json(args.input_json)
+    logger.info(f"Pushed playlists from {args.input_json} to Spotify")
+
+
+def command_tidal_export(args):
+    ti = TidalIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        personal_access_token=args.personal_access_token,
+        redirect_uri=args.redirect_uri,
+    )
+    data = ti.fetch_user_playlists_with_tracks()
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"Tidal playlists exported to {args.output}")
+
+
+def command_tidal_augment(args):
+    ti = TidalIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        personal_access_token=args.personal_access_token,
+        redirect_uri=args.redirect_uri,
+    )
+    ti.augment_spotify_with_tidal_ids(
+        spotify_json_path=args.input_json, output_path=args.output_json
+    )
+    logger.info(f"Augmented JSON with Tidal IDs → {args.output_json}")
+
+
+def command_tidal_push(args):
+    ti = TidalIntegration(
+        client_id=args.client_id,
+        client_secret=args.client_secret,
+        personal_access_token=args.personal_access_token,
+        redirect_uri=args.redirect_uri,
+    )
+    ti.add_playlists_and_tracks_from_json(args.input_json)
+    logger.info(f"Pushed playlists from {args.input_json} to Tidal")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plex Playlist Generator & Uploader")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -224,6 +304,78 @@ def main():
         "--verbose", action="store_true", help="Enable verbose logging (DEBUG level)"
     )
     ver_parser.set_defaults(func=command_verify)
+
+    migrate = subparsers.add_parser(
+        "migrate", help="Migrate playlists between Spotify and Tidal"
+    )
+    mig_sub = migrate.add_subparsers(dest="service", required=True)
+
+    # Spotify side
+    sp_exp = mig_sub.add_parser(
+        "spotify-export", help="Export your Spotify playlists to JSON"
+    )
+    sp_exp.add_argument("--client-id", required=True)
+    sp_exp.add_argument("--client-secret", required=True)
+    sp_exp.add_argument("--use-oauth", action="store_true")
+    sp_exp.add_argument("--redirect-uri")
+    sp_exp.add_argument("--scope")
+    sp_exp.add_argument("--output", required=True, help="Output JSON path")
+    sp_exp.set_defaults(func=command_spotify_export)
+
+    sp_aug = mig_sub.add_parser(
+        "spotify-augment", help="Augment a Tidal JSON with Spotify URIs"
+    )
+    sp_aug.add_argument("--client-id", required=True)
+    sp_aug.add_argument("--client-secret", required=True)
+    sp_aug.add_argument("--use-oauth", action="store_true")
+    sp_aug.add_argument("--redirect-uri")
+    sp_aug.add_argument("--scope")
+    sp_aug.add_argument("--input-json", required=True)
+    sp_aug.add_argument("--output-json", required=True)
+    sp_aug.set_defaults(func=command_spotify_augment)
+
+    sp_push = mig_sub.add_parser(
+        "spotify-push", help="Create/update Spotify playlists from JSON"
+    )
+    sp_push.add_argument("--client-id", required=True)
+    sp_push.add_argument("--client-secret", required=True)
+    sp_push.add_argument("--use-oauth", action="store_true")
+    sp_push.add_argument("--redirect-uri")
+    sp_push.add_argument("--scope")
+    sp_push.add_argument("--input-json", required=True)
+    sp_push.set_defaults(func=command_spotify_push)
+
+    # Tidal side
+    td_exp = mig_sub.add_parser(
+        "tidal-export", help="Export your Tidal playlists to JSON"
+    )
+    td_exp.add_argument("--client-id", required=True)
+    td_exp.add_argument("--client-secret")
+    td_exp.add_argument("--personal-access-token")
+    td_exp.add_argument("--redirect-uri")
+    td_exp.add_argument("--output", required=True)
+    td_exp.set_defaults(func=command_tidal_export)
+
+    td_aug = mig_sub.add_parser(
+        "tidal-augment", help="Augment a Spotify JSON with Tidal IDs"
+    )
+    td_aug.add_argument("--client-id", required=True)
+    td_aug.add_argument("--client-secret")
+    td_aug.add_argument("--personal-access-token")
+    td_aug.add_argument("--redirect-uri")
+    td_aug.add_argument("--input-json", required=True)
+    td_aug.add_argument("--output-json", required=True)
+    td_aug.set_defaults(func=command_tidal_augment)
+
+    td_push = mig_sub.add_parser(
+        "tidal-push", help="Create/update Tidal playlists from JSON"
+    )
+    td_push.add_argument("--client-id", required=True)
+    td_push.add_argument("--client-secret")
+    td_push.add_argument("--personal-access-token")
+    td_push.add_argument("--redirect-uri")
+    td_push.add_argument("--input-json", required=True)
+    td_push.set_defaults(func=command_tidal_push)
 
     args = parser.parse_args()
 
