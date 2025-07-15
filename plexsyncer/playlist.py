@@ -1,17 +1,43 @@
+#!/usr/bin/env python3
+import concurrent.futures
 import json
 import logging
 import os
-from typing import List
+from multiprocessing import cpu_count
+from typing import List, Optional
 
-from integrations.spotify import (
-    extract_playlist_id,
-    extract_playlist_titles_from_url,
-    get_spotify_client,
-)
+from integrations.spotify import SpotifyIntegration
+from integrations.tidal import TidalIntegration
 from plexsyncer.helpers import normalize_path
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def check_all_playlists_exist(playlist_folder: str, ext: str = ".m3u8") -> bool:
+    """
+    Check if all expected .m3u8 files exist in the playlist subdirectories.
+
+    Args:
+        playlist_folder: Root folder containing playlist subdirectories
+        ext: Extension of playlist files to check for
+
+    Returns:
+        True if all expected playlist files exist, False otherwise
+    """
+    try:
+        with os.scandir(playlist_folder) as entries:
+            for entry in entries:
+                if entry.is_dir():
+                    playlist_file = os.path.join(entry.path, f"{entry.name}{ext}")
+                    if not os.path.exists(playlist_file):
+                        logger.info(f"Playlist file missing: {playlist_file}")
+                        return False
+        logger.info(f"All playlist files already exist in {playlist_folder}")
+        return True
+    except Exception as e:
+        logger.error(f"Error checking playlist files in {playlist_folder}: {e}")
+        return False
 
 
 def remove_existing_playlists(playlist_folder: str) -> None:
@@ -28,13 +54,13 @@ def remove_existing_playlists(playlist_folder: str) -> None:
 
 
 def generate_playlist(
-        folder: str,
-        playlist_file: str,
-        m3u8_local_root: str,
-        m3u8_plex_root: str,
-        encode_spaces: bool,
-        incremental: bool = False,
-        extensions: set = None,
+    folder: str,
+    playlist_file: str,
+    m3u8_local_root: str,
+    m3u8_plex_root: str,
+    encode_spaces: bool,
+    incremental: bool = False,
+    extensions: Optional[set] = None,
 ) -> None:
     """Generates a playlist file (.m3u8) from media files in a folder."""
     if extensions is None:
@@ -83,22 +109,24 @@ def generate_playlist(
                         continue
                     duration = 0
                     title = file
-                    # Optionally use mutagen if available for metadata extraction.
                     try:
                         from mutagen import File as MutagenFile
 
-                        if MutagenFile:
-                            audio = MutagenFile(os.path.join(root, file))
-                            if (
-                                    audio
-                                    and hasattr(audio, "info")
-                                    and hasattr(audio.info, "length")
-                            ):
-                                duration = int(audio.info.length)
-                            if audio and audio.tags:
-                                title = audio.tags.get("TIT2", file)
-                                if hasattr(title, "text"):
-                                    title = title.text[0]
+                        audio = MutagenFile(full_path)
+                        if (
+                            audio
+                            and hasattr(audio, "info")
+                            and hasattr(audio.info, "length")
+                        ):
+                            duration = int(audio.info.length)
+                        if audio and audio.tags:
+                            title_tag = audio.tags.get("TIT2")
+                            if title_tag:
+                                title = (
+                                    title_tag.text[0]
+                                    if hasattr(title_tag, "text")
+                                    else str(title_tag)
+                                )
                     except Exception as e:
                         logger.debug(f"Error reading metadata for {file}: {e}")
                     playlist.write(f"#EXTINF:{duration},{title}\n")
@@ -109,49 +137,179 @@ def generate_playlist(
     logger.info(f"Playlist updated: {playlist_file}")
 
 
+def _generate_single_playlist_worker(args):
+    """Worker function for parallel playlist generation."""
+    (
+        folder_path,
+        folder_name,
+        m3u8_local_root,
+        m3u8_plex_root,
+        encode_spaces,
+        incremental,
+        ext,
+    ) = args
+
+    playlist_file = os.path.join(folder_path, f"{folder_name}{ext}")
+
+    try:
+        generate_playlist(
+            folder_path,
+            playlist_file,
+            m3u8_local_root,
+            m3u8_plex_root,
+            encode_spaces,
+            incremental=incremental,
+        )
+        logger.info(f"✅ Processed playlist for folder: {folder_name}")
+        return playlist_file
+    except Exception as e:
+        logger.error(f"❌ Error processing playlist for folder {folder_name}: {e}")
+        return None
+
+
 def process_library(
-        playlist_folder: str,
-        m3u8_local_root: str,
-        m3u8_plex_root: str,
-        encode_spaces: bool,
-        incremental: bool = False,
-        ext: str = ".m3u8",
+    playlist_folder: str,
+    m3u8_local_root: str,
+    m3u8_plex_root: str,
+    encode_spaces: bool,
+    incremental: bool = False,
+    ext: str = ".m3u8",
+    force_regenerate: bool = False,
+    parallel: bool = True,
+    max_workers: Optional[int] = None,
 ) -> List[str]:
-    """Scans the playlist folder and processes each subdirectory as a separate playlist."""
+    """
+    Scans the playlist folder and processes each subdirectory as a separate playlist.
+
+    Args:
+        playlist_folder: Root folder containing playlist subdirectories
+        m3u8_local_root: Local root folder for the media files
+        m3u8_plex_root: Plex server root folder for the media files
+        encode_spaces: Whether to encode spaces as %20 in the path
+        incremental: Whether to run in incremental mode (append only new tracks)
+        ext: Extension for playlist files
+        force_regenerate: If True, force regeneration even if all playlists exist
+        parallel: Whether to use parallel processing for playlist generation
+        max_workers: Maximum number of parallel workers (defaults to CPU count)
+
+    Returns:
+        List of generated playlist file paths
+    """
     m3u8_local_root = normalize_path(m3u8_local_root)
     logger.debug(f"Using m3u8 local root: {m3u8_local_root}")
+
+    # Optimization: Skip regeneration if all playlists exist and force_regenerate is False
+    if not force_regenerate and check_all_playlists_exist(playlist_folder, ext):
+        logger.info(
+            "All playlist files already exist. Skipping regeneration. Use force_regenerate=True to override."
+        )
+        # Return list of existing playlist files
+        generated_files = []
+        try:
+            with os.scandir(playlist_folder) as entries:
+                for entry in entries:
+                    if entry.is_dir():
+                        playlist_file = os.path.join(entry.path, f"{entry.name}{ext}")
+                        if os.path.exists(playlist_file):
+                            generated_files.append(playlist_file)
+        except Exception as e:
+            logger.error(f"Error collecting existing playlist files: {e}")
+        return generated_files
+
     if not incremental:
         remove_existing_playlists(playlist_folder)
-    generated_files = []
+
+    # Collect all playlist folders to process
+    playlist_folders = []
     try:
         with os.scandir(playlist_folder) as entries:
             for entry in entries:
                 if entry.is_dir():
-                    folder_name = entry.name
-                    folder_path = entry.path
-                    playlist_file = os.path.join(folder_path, f"{folder_name}{ext}")
-                    generate_playlist(
-                        folder_path,
-                        playlist_file,
-                        m3u8_local_root,
-                        m3u8_plex_root,
-                        encode_spaces,
-                        incremental=incremental,
-                    )
-                    logger.info(f"Processed playlist for folder: {folder_name}")
-                    generated_files.append(playlist_file)
-                else:
-                    logger.debug(f"Skipping non-directory entry: {entry.name}")
+                    playlist_folders.append((entry.path, entry.name))
     except Exception as e:
         logger.error(f"Error scanning playlist folder {playlist_folder}: {e}")
+        return []
+
+    if not playlist_folders:
+        logger.info("No playlist folders found.")
+        return []
+
+    logger.info(f"Found {len(playlist_folders)} playlist folders to process.")
+
+    if parallel and len(playlist_folders) > 1:
+        # Use parallel processing
+        if max_workers is None:
+            max_workers = min(cpu_count(), len(playlist_folders))
+
+        logger.info(f"🚀 Using parallel processing with {max_workers} workers...")
+
+        # Prepare arguments for worker function
+        worker_args = [
+            (
+                folder_path,
+                folder_name,
+                m3u8_local_root,
+                m3u8_plex_root,
+                encode_spaces,
+                incremental,
+                ext,
+            )
+            for folder_path, folder_name in playlist_folders
+        ]
+
+        generated_files = []
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=max_workers
+        ) as executor:
+            # Submit all tasks
+            future_to_folder = {
+                executor.submit(_generate_single_playlist_worker, args): args[1]
+                for args in worker_args
+            }
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_folder):
+                folder_name = future_to_folder[future]
+                try:
+                    result = future.result()
+                    if result:
+                        generated_files.append(result)
+                except Exception as e:
+                    logger.error(f"❌ Error processing folder {folder_name}: {e}")
+
+        logger.info(
+            f"✅ Parallel processing complete. Generated {len(generated_files)} playlists."
+        )
+
+    else:
+        # Use sequential processing (original behavior)
+        logger.info("📝 Using sequential processing...")
+        generated_files = []
+
+        for folder_path, folder_name in playlist_folders:
+            playlist_file = os.path.join(folder_path, f"{folder_name}{ext}")
+            try:
+                generate_playlist(
+                    folder_path,
+                    playlist_file,
+                    m3u8_local_root,
+                    m3u8_plex_root,
+                    encode_spaces,
+                    incremental=incremental,
+                )
+                logger.info(f"Processed playlist for folder: {folder_name}")
+                generated_files.append(playlist_file)
+            except Exception as e:
+                logger.error(f"Error processing playlist for folder {folder_name}: {e}")
+
     return generated_files
 
 
 def generate_master_playlist(
-        generated_files: List[str],
-        m3u8_local_root: str,
-        m3u8_plex_root: str,
-        output_file: str = "master.m3u8",
+    generated_files: List[str],
+    m3u8_local_root: str,
+    m3u8_plex_root: str,
+    output_file: str = "master.m3u8",
 ) -> None:
     """Generates a master m3u8 file that lists all remapped playlist file paths."""
     local_root_norm = normalize_path(m3u8_local_root)
@@ -168,11 +326,11 @@ def generate_master_playlist(
 
 
 def create_playlist_json_structure(
-        input_json_file: str, output_json_file: str, encode_spaces: bool = False
+    input_json_file: str, output_json_file: str, encode_spaces: bool = False
 ) -> None:
     """
     Reads a JSON file with playlist data and creates a new JSON structure containing detailed
-    track information from each playlist. This output can be used to search for tracks via the Plex API.
+    track information from each playlist for Plex API.
     """
     try:
         with open(input_json_file, "r", encoding="utf-8") as f:
@@ -189,29 +347,12 @@ def create_playlist_json_structure(
     output_data = {"playlists": []}
     for pl in playlists:
         playlist_name = pl.get("name", "Unnamed Playlist")
-        last_modified = pl.get("lastModifiedDate", "")
-        output_playlist = {
-            "name": playlist_name,
-            "lastModifiedDate": last_modified,
-            "tracks": [],
-        }
-        for item in pl.get("items", []):
-            track = item.get("track")
-            if track:
-                track_name = track.get("trackName", "Unknown Track")
-                artist_name = track.get("artistName", "Unknown Artist")
-                album_name = track.get("albumName", "Unknown Album")
-                track_uri = track.get("trackUri", "")
-                if encode_spaces:
-                    track_uri = track_uri.replace(" ", "%20")
-                output_playlist["tracks"].append(
-                    {
-                        "trackName": track_name,
-                        "artistName": artist_name,
-                        "albumName": album_name,
-                        "trackUri": track_uri,
-                    }
-                )
+        output_playlist = {"name": playlist_name, "tracks": []}
+        for item in pl.get("tracks", []):
+            track_uri = item.get("trackUri", "")
+            if encode_spaces:
+                track_uri = track_uri.replace(" ", "%20")
+            output_playlist["tracks"].append({"trackUri": track_uri})
         output_data["playlists"].append(output_playlist)
         logger.info(
             f"Processed playlist '{playlist_name}' with {len(output_playlist['tracks'])} tracks."
@@ -225,77 +366,57 @@ def create_playlist_json_structure(
 
 
 def create_playlist_json_from_spotify_url(
-        playlist_url: str,
-        client_id: str,
-        client_secret: str,
-        output_json_file: str,
-        encode_spaces: bool = False,
-        use_oauth: bool = False,
-        redirect_uri: str = None,
-        scope: str = None,
+    playlist_url: str,
+    client_id: str,
+    client_secret: str,
+    output_json_file: str,
+    encode_spaces: bool = False,
+    use_oauth: bool = False,
+    redirect_uri: Optional[str] = None,
+    scope: Optional[str] = None,
 ) -> None:
     """
-    Given a Spotify playlist URL, retrieves detailed track information from Spotify and writes a JSON
-    structure containing the playlist name and a list of tracks. Supports both client credentials and user OAuth.
-
-    The output JSON structure will be:
-
-    {
-      "playlist": {
-          "name": "Playlist Name",
-          "tracks": [
-              {
-                  "trackName": "Song Title",
-                  "artistName": "Artist Name",
-                  "albumName": "Album Name",
-                  "trackUri": "spotify:track:XXXX"
-              },
-              ...
-          ]
-      }
-    }
+    Given a Spotify playlist URL, uses the SpotifyIntegration helper to export playlist data to JSON.
+    Supports client credentials or user OAuth flows.
     """
     try:
-        sp = get_spotify_client(
-            client_id, client_secret, use_oauth, redirect_uri, scope
+        spotify = SpotifyIntegration(
+            client_id=client_id,
+            client_secret=client_secret,
+            use_oauth=use_oauth,
+            redirect_uri=redirect_uri,
+            scope=scope,
         )
-        playlist_id = extract_playlist_id(playlist_url)
-        playlist_data = sp.playlist(playlist_id)
-        playlist_name = playlist_data.get("name", "Unnamed Playlist")
-        tracks = []
-        results = sp.playlist_items(playlist_id)
-        while results:
-            for item in results.get("items", []):
-                track = item.get("track")
-                if track:
-                    track_name = track.get("name", "Unknown Track")
-                    artists = track.get("artists", [])
-                    artist_name = ", ".join(
-                        [a.get("name", "Unknown Artist") for a in artists]
-                    )
-                    album_name = track.get("album", {}).get("name", "Unknown Album")
-                    track_uri = track.get("uri", "")
-                    if encode_spaces:
-                        track_uri = track_uri.replace(" ", "%20")
-                    tracks.append(
-                        {
-                            "trackName": track_name,
-                            "artistName": artist_name,
-                            "albumName": album_name,
-                            "trackUri": track_uri,
-                        }
-                    )
-            if results.get("next"):
-                results = sp.next(results)
-            else:
-                results = None
-        output_data = {"playlist": {"name": playlist_name, "tracks": tracks}}
-        with open(output_json_file, "w", encoding="utf-8") as out:
-            json.dump(output_data, out, indent=2)
-        logger.info(f"Playlist JSON structure written to: {output_json_file}")
+        spotify.export_playlist(
+            playlist_url,
+            output_json_file,
+            encode_spaces=encode_spaces,
+        )
+        logger.info(f"Spotify playlist exported to JSON: {output_json_file}")
     except Exception as e:
-        logger.error(f"Error creating JSON structure from Spotify URL: {e}")
+        logger.error(f"Error exporting Spotify playlist: {e}")
 
 
-# For compatibility with our module style, alias the extraction function.
-extract_playlist_titles_from_url = extract_playlist_titles_from_url
+def create_playlist_json_from_tidal_url(
+    client_id: str,
+    redirect_uri: str,
+    output_json_file: str,
+    encode_spaces: bool = False,
+) -> None:
+    """
+    Given TIDAL client credentials, fetches user playlists with tracks and writes to JSON.
+    """
+    try:
+        tidal = TidalIntegration(client_id=client_id, redirect_uri=redirect_uri)
+        data = tidal.fetch_user_playlists_with_tracks()
+        # Optionally encode spaces in track URIs if needed
+        if encode_spaces:
+            for pl in data.get("playlists", []):
+                for track in pl.get("tracks", []):
+                    uri = track.get("trackUri", "")
+                    track["trackUri"] = uri.replace(" ", "%20")
+        with open(output_json_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        logger.info(f"TIDAL playlists exported to JSON: {output_json_file}")
+    except Exception as e:
+        logger.error(f"Error exporting TIDAL playlists: {e}")

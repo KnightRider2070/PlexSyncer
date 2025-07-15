@@ -11,12 +11,14 @@ listing all remapped playlist paths.
 """
 
 import argparse
+import json
 import logging
 import os
 
 from integrations.spotify import SpotifyIntegration
 from integrations.tidal import TidalIntegration
 from plexsyncer.api import (
+    create_playlist_from_m3u8,
     generate_master_playlist,
     get_section_id_from_library,
     upload_playlist_via_api,
@@ -51,6 +53,16 @@ def command_generate(args):
         logger.info(f"Found {len(generated_files)} existing playlist files.")
     else:
         logger.info("Generating playlists...")
+
+        # Determine parallel processing settings
+        parallel = args.parallel and not args.sequential
+        max_workers = args.max_workers if hasattr(args, "max_workers") else None
+
+        if parallel:
+            logger.info("🚀 Using parallel processing for faster generation...")
+        else:
+            logger.info("📝 Using sequential processing...")
+
         generated_files = process_library(
             playlist_folder=args.playlist_folder,
             m3u8_local_root=args.m3u8_local_root,
@@ -58,6 +70,8 @@ def command_generate(args):
             encode_spaces=args.encode_spaces,
             incremental=args.incremental,
             ext=".m3u8",
+            parallel=parallel,
+            max_workers=max_workers,
         )
         logger.info("Playlist generation complete.")
 
@@ -70,19 +84,28 @@ def command_generate(args):
         except Exception as e:
             logger.error(f"Unable to determine section id: {e}")
             return
+
+        success_count = 0
+        total_count = len(generated_files)
+
         for file_path in generated_files:
             if os.path.exists(file_path):
-                upload_playlist_via_api(
+                success = create_playlist_from_m3u8(
                     file_path=file_path,
                     m3u8_local_root=args.m3u8_local_root,
                     m3u8_plex_root=args.m3u8_plex_root,
                     section_id=section_id,
                     plex_token=args.plex_token,
-                    api_url_base=args.api_url,
-                    encode_spaces=args.encode_spaces,
+                    plex_url=args.plex_url,
                 )
+                if success:
+                    success_count += 1
             else:
                 logger.error(f"File not found: {file_path}")
+
+        logger.info(
+            f"Playlist creation finished. {success_count}/{total_count} playlists created successfully."
+        )
 
     # Verify uploads if requested.
     if args.verify_uploads:
@@ -249,6 +272,22 @@ def main():
         "--incremental",
         action="store_true",
         help="Append only new tracks if playlist already exists",
+    )
+    gen_parser.add_argument(
+        "--parallel",
+        action="store_true",
+        default=True,
+        help="Use parallel processing for faster playlist generation (default: True)",
+    )
+    gen_parser.add_argument(
+        "--sequential",
+        action="store_true",
+        help="Use sequential processing instead of parallel (overrides --parallel)",
+    )
+    gen_parser.add_argument(
+        "--max-workers",
+        type=int,
+        help="Maximum number of parallel workers (defaults to CPU count)",
     )
     gen_parser.add_argument(
         "--generate-only",
